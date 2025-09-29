@@ -9,29 +9,20 @@ import re
 # ABUSIVE WORDS LIST (MULTI-LANGUAGE)
 # ==============================
 abuse_words = [
-    # English abusive words
-    "bc", "bitch", "ass", "shit", "fuck", "idiot", "stupid", "damn",
-    "dumb", "moron", "fool", "crap", "bastard", "slut", "whore", "screw",
-    "jerk", "dick", "pussy", "cock", "cunt", "bollocks", "bugger", "arse",
-    "twat", "prick", "tosser", "wanker", "bloody", "bollok", "git", "numpty",
+    # Strong English abusive words
+    "bc", "bitch", "ass", "shit", "fuck", "damn", "crap", "bastard",
+    "slut", "whore", "jerk", "dick", "pussy", "cock", "cunt",
+    "bollocks", "bugger", "arse", "twat", "prick", "tosser", "wanker",
+
     # Hindi abusive words (transliterated)
     "chutiya", "bhosadi", "madarchod", "randi", "harami", "bhains", "lund",
-    "gandu", "chodu", "bhenchod", "randi", "chutiye", "kaminey", "haramzada",
+    "gandu", "chodu", "bhenchod", "chutiye", "kaminey", "haramzada",
     "lund ka", "bhosdike", "mc", "bhosadi ke", "gaand", "madarchod",
-    # Common mix/other languages
-    "puta", "mierda", "idiota", "stupido", "kuso", "sharm", "saala",
-    "behenchod", "lodu", "gand", "kutta", "billi", "harami", "loda",
-    "choot", "chootiyapa", "behen ka", "bhai ka", "lodu", "haram",
-    # Add more English/Hindi abusive words
-    "noob", "loser", "jerkface", "scumbag", "dickhead", "asshole", "bastards",
-    "moronic", "cuck", "douche", "tool", "shameless", "twatwaffle", "dipshit",
-    "dingleberry", "foolish", "dolt", "cretin", "numbnuts", "dumbass",
-    "dickweed", "troll", "loser", "idiocy", "stupidity",
-    # Hindi transliterated more
-    "madharchod", "bhen ka loda", "gandu ka", "choot ka", "lund ka", "chod",
-    "randi ka", "bhonsadi ka", "haram ka", "bhosda", "chootiyapa",
-    "lodu ka", "chutiya ka", "gandu ki", "kaminey ka"
-    # Continue adding words until 200+ total
+    "bhen ka loda", "gandu ka", "choot ka", "randi ka", "bhonsadi ka",
+    "haram ka", "bhosda", "chootiyapa", "lodu ka", "chutiya ka",
+    "gandu ki", "kaminey ka"
+
+    # Optional: more strong words can be added later
 ]
 
 # ==============================
@@ -107,6 +98,10 @@ from telegram.helpers import mention_html
 
 # -----------------------------
 # MESSAGE HANDLER
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.helpers import mention_html
+from telegram.constants import ParseMode
+
 # -----------------------------
 async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Check every message for abusive words and mention the sender."""
@@ -122,12 +117,22 @@ async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if abuse_pattern.search(text):
         try:
             await message.delete()
+
             # Mention the user in the warning message
             user_mention = mention_html(message.from_user.id, message.from_user.first_name)
+
+            warning_text = f"{user_mention} Don’t use prohibited words 🧧"
+
+            # Support button
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("Support 🍀", url="https://t.me/NexoraBots_Support")
+            ]])
+
             await context.bot.send_message(
                 chat_id,
-                f"{user_mention}  Don’t use prohibited words 🧧",
-                parse_mode=ParseMode.HTML
+                warning_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard
             )
         except Exception as e:
             print(f"[ABUSE] Failed to delete message: {e}")
