@@ -157,8 +157,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     username = user.username or user.first_name
 
-    # Save user to DB
-    save_user(user.id, username, user.first_name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    # Check if user already exists
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM users WHERE user_id = ?", (user.id,))
+    exists = c.fetchone()  # None if user not in DB
+    conn.close()
+
+    # Save user to DB if new
+    if not exists:
+        save_user(user.id, username, user.first_name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # -----------------------------
+        # Log new user to log group
+        # -----------------------------
+        try:
+            log_text = f"🎟 New User Joined!\n👤 Name: {username}\n🆔 ID: {user.id}"
+            await context.bot.send_message(LOG_GROUP_ID, log_text)
+        except Exception as e:
+            print(f"[LOG] Failed to send new user log: {e}")
+
     if chat.type in ["group", "supergroup"]:
         add_group(chat.id)
 
@@ -183,14 +201,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
 
-    # -----------------------------
-    # Log new user to log group
-    # -----------------------------
-    try:
-        log_text = f"🎟 New User Joined!\n👤 Name: {username}\n🆔 ID: {user.id}"
-        await context.bot.send_message(LOG_GROUP_ID, log_text)
-    except Exception as e:
-        print(f"[LOG] Failed to send new user log: {e}")
 
 async def send_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ensure_image()
