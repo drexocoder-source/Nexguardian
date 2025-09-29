@@ -82,17 +82,34 @@ async def is_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: in
     return user_id in admins
 
 # ======================
-# EDIT DEFENDER
+# BACKGROUND DELETION
 # ======================
-import asyncio
-from telegram import Update
-from telegram.ext import ContextTypes
+async def delete_later(bot, chat_id, msg_id, warning, delay, user):
+    """Delete the edited message + warning after delay (background)."""
+    try:
+        await asyncio.sleep(delay)
+
+        # Delete edited message
+        try:
+            await bot.delete_message(chat_id, msg_id)
+            print(f"[EDIT DEBUG] Deleted edited message from {user}")
+        except Exception as e:
+            print(f"[EDIT DEBUG] Cannot delete message: {e}")
+
+        # Delete warning
+        if warning:
+            try:
+                await warning.delete()
+            except Exception as e:
+                print(f"[EDIT DEBUG] Cannot delete warning message: {e}")
+
+    except Exception as e:
+        print(f"[EDIT DEBUG] Error in delete_later: {e}")
+
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 async def on_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Trigger when a message is edited.
-    Deletes the message if edit defender is enabled and user is not admin.
-    """
+    """Trigger when a message is edited."""
     message = update.edited_message
     try:
         if not message or message.chat.type not in ["group", "supergroup"]:
@@ -111,43 +128,43 @@ async def on_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[EDIT DEBUG] Edit defender disabled or delay <= 0 for chat {message.chat.id}")
             return
 
-        # Skip admins
-        if await is_admin(context.bot, message.chat.id, message.from_user.id):
-            print(f"[EDIT DEBUG] Skipping admin: {user}")
-            return
+        # 🚫 No admin skip — applies to ALL
 
-        # Send warning
+        # Warning text
         warning_text = (
             f"⚠️ Edit Alert!\n"
             f"🚫 Edits are not allowed in this group!\n"
             f"⏳ Your message will be deleted in {settings['delay_seconds']} seconds."
         )
+
+        # Support button
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("Support 🍀", url="https://t.me/NexoraBots_Support")
+        ]])
+
         try:
-            sent = await message.reply_text(warning_text)
+            sent = await message.reply_text(warning_text, reply_markup=keyboard)
         except Exception as e:
             print(f"[EDIT DEBUG] Cannot send warning message: {e}")
             sent = None
 
-        # Wait delay
-        await asyncio.sleep(settings["delay_seconds"])
-
-        # Delete original edited message
-        try:
-            await context.bot.delete_message(message.chat.id, message.message_id)
-            print(f"[EDIT DEBUG] Deleted edited message from {user}")
-        except Exception as e:
-            print(f"[EDIT DEBUG] Cannot delete message: {e}")
-
-        # Delete warning
-        if sent:
-            try:
-                await sent.delete()
-            except Exception as e:
-                print(f"[EDIT DEBUG] Cannot delete warning message: {e}")
+        # Run deletion in background
+        asyncio.create_task(
+            delete_later(
+                context.bot,
+                message.chat.id,
+                message.message_id,
+                sent,
+                settings["delay_seconds"],
+                user,
+            )
+        )
 
     except Exception as e:
         print(f"[EDIT DEBUG] Error in on_edit: {e}")
 
+# ======================
+# COMMANDS
 # ======================
 async def setdelay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
@@ -188,7 +205,7 @@ async def editdefender_command(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if args[1].lower() not in ["on", "off"]:
-        await message.reply_text("ℹ️ Usage: `/editedit on/off`")
+        await message.reply_text("ℹ️ Usage: `/editdefender on/off`")
         return
 
     enabled = args[1].lower() == "on"
