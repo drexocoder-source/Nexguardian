@@ -364,6 +364,30 @@ async def backup_db_loop(bot):
 
         # 20 hours in seconds
         await asyncio.sleep(20 * 60 * 60)
+# ======================
+# BACKUP COMMAND
+# ======================
+async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id != OWNER_ID:
+        await update.message.reply_text("❌ You are not authorized to use this command.")
+        return
+
+    if not os.path.exists(DB_FILE):
+        await update.message.reply_text("⚠️ Database file not found!")
+        return
+
+    try:
+        with open(DB_FILE, "rb") as f:
+            await context.bot.send_document(
+                chat_id=OWNER_ID,
+                document=f,
+                caption="📂 Here is your current DB backup."
+            )
+        await update.message.reply_text("✅ Backup sent to your DM.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to send backup: {e}")
+        print(f"[BACKUP] Failed to send DB: {e}")
 
 # ======================
 # MAIN
@@ -391,6 +415,8 @@ def main():
     app.add_handler(CommandHandler("media", media_command))
     app.add_handler(CommandHandler("interval", interval_command))
     app.add_handler(CommandHandler("restore", restore_command))  # Restore command
+    app.add_handler(CommandHandler("backup", backup_command))
+
 
     # Edited messages
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
