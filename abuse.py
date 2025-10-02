@@ -3,8 +3,6 @@ import re
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 
-import re
-
 # ==============================
 # ABUSIVE WORDS LIST (MULTI-LANGUAGE)
 # ==============================
@@ -138,8 +136,63 @@ async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
             print(f"[ABUSE] Failed to delete message: {e}")
 
 # -----------------------------
-# HANDLERS TO ADD IN MAIN
+OWNER_ID = 7995262033  # Replace with your ID
+
 # -----------------------------
+# Owner-only commands to manage abuse_words list
+async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Add abusive word (owner only)."""
+    user = update.effective_user
+    if user.id != OWNER_ID:
+        return  # Ignore non-owner
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("❌ Usage: /add <word>")
+        return
+
+    word = args[0].lower()
+    if word in abuse_words:
+        await update.message.reply_text(f"⚠️ Word '{word}' already exists in the list.")
+        return
+
+    abuse_words.append(word)
+
+    # Recompile regex
+    global abuse_pattern
+    abuse_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b', re.IGNORECASE)
+
+    await update.message.reply_text(f"✅ Word '{word}' added to abusive list.")
+
+async def rm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove abusive word (owner only)."""
+    user = update.effective_user
+    if user.id != OWNER_ID:
+        return  # Ignore non-owner
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("❌ Usage: /rm <word>")
+        return
+
+    word = args[0].lower()
+    if word not in abuse_words:
+        await update.message.reply_text(f"⚠️ Word '{word}' not found in the list.")
+        return
+
+    abuse_words.remove(word)
+
+    # Recompile regex
+    global abuse_pattern
+    abuse_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b', re.IGNORECASE)
+
+    await update.message.reply_text(f"✅ Word '{word}' removed from abusive list.")
+
+# -----------------------------
+# Register all handlers in main
 def register_abuse_handlers(application):
+    init_abuse_db()
     application.add_handler(CommandHandler("abuse", abuse_command))
+    application.add_handler(CommandHandler("add", add_command))
+    application.add_handler(CommandHandler("rm", rm_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, abuse_message_handler))
