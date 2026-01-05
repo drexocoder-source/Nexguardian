@@ -69,7 +69,15 @@ async def media_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Only media types
-    if not any([message.photo, message.video, message.animation, message.sticker]):
+    is_media = any([
+        message.photo,
+        message.video,
+        message.animation,
+        message.sticker,
+        message.document and message.document.mime_type == "video/mp4"
+    ])
+
+    if not is_media:
         return
 
     # Add to queue
