@@ -35,11 +35,11 @@ from abuse import register_abuse_handlers, init_abuse_db
  # CONFIG
  # ======================
 BOT_TOKEN = "8472284333:AAELqEsjqJEYJGQtuod0FNmyYkzElvx1m1o"
-ADMIN_USER_ID = 7995262033
+ADMIN_USER_ID = 8294062042
 BANNER_URL = "https://graph.org/file/855bf51853efeb6c72866-cea0a3a8655dd75ad4.jpg"
 STATS_IMAGE = "temp_image.jpg"
 DB_FILE = "nexora_guardian.db"
-OWNER_ID = 7995262033  # Owner ID to send DB backups
+OWNER_ID = 8294062042  # Owner ID to send DB backups
 
  # ======================
  # DATABASE
@@ -149,7 +149,7 @@ def ensure_image():
  # ======================
  # COMMAND HANDLERS
  # ======================
-LOG_GROUP_ID = -1002962367553  # Replace with your actual log group ID
+LOG_GROUP_ID = -1003527724170  # Replace with your actual log group ID
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
      user = update.effective_user
@@ -231,58 +231,26 @@ async def send_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
              reply_to_message_id=update.message.message_id
          )
 
+from stats_image import generate_stats_image
+import time
+
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    image_ready = ensure_image()  # ensure banner exists
     start = time.time()
 
-    user_count = len(get_all_users())
-    group_count = len(get_all_groups())
-    blocked = 0
+    users = len(get_all_users())
+    groups = len(get_all_groups())
     ping = int((time.time() - start) * 1000)
-    python_ver = platform.python_version()
 
-    chat_id = update.effective_chat.id
-
-    # ===== Fetch per-group settings =====
-    from edit import get_edit_settings
-    from media import get_media_settings
-    from abuse import get_abuse_settings
-
-    edit_settings = get_edit_settings(chat_id)
-    anti_edit_status = "Enabled" if edit_settings["is_enabled"] else "Disabled"
-
-    media_settings = get_media_settings(chat_id)
-    media_status = "Enabled" if media_settings["is_enabled"] else "Disabled"
-
-    abuse_enabled = get_abuse_settings(chat_id)  # returns bool
-    abuse_status = "Enabled" if abuse_enabled else "Disabled"
-
-    stats_text = (
-        "─── Nexora Guardian Stats ───\n\n"
-        f"Total Users       : `{user_count}`\n"
-        f"Total Groups      : `{group_count}`\n"
-        f"Blocked Users     : `{blocked}`\n"
-        f"Bot Ping          : `{ping} ms`\n"
-        f"Python Version    : `{python_ver}`\n\n"
-        "──── Features Status ────\n\n"
-        f"Anti-Edit         : {anti_edit_status}\n"
-        f"Media Auto-Delete : {media_status}\n"
-        f"Abuse Filter      : {abuse_status}\n\n"
-        "──────────────────────────\n"
-        "Security features are active and protecting this group."
+    img_path = generate_stats_image(
+        users=users,
+        groups=groups,
+        ping=ping,
+        uptime="0h 0m"
     )
 
-    if image_ready:
-        await update.message.reply_photo(
-            photo=STATS_IMAGE,
-            caption=stats_text,
-            parse_mode="Markdown"
-        )
-    else:
-        await update.message.reply_text(
-            stats_text,
-            parse_mode="Markdown"
-        )
+    await update.message.reply_photo(
+        photo=open(img_path, "rb")
+    )
 
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
      if update.effective_user.id != ADMIN_USER_ID:
@@ -334,7 +302,7 @@ async def handle_edited_message(update: Update, context: ContextTypes.DEFAULT_TY
      await on_edit(update, context)
 
 DB_FILE = "nexora_guardian.db"
-OWNER_ID = 7995262033  # Replace with your ID
+OWNER_ID = 8294062042  # Replace with your ID
 
 async def restore_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
      if update.effective_user.id != OWNER_ID:
@@ -417,6 +385,7 @@ def main():
      init_media_db()
      init_abuse_db()
 
+
      print("Nexora Guardian is running...")
 
      app = Application.builder().token(BOT_TOKEN).build()
@@ -441,14 +410,20 @@ def main():
      app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
 
      # Media auto-delete
-     media_filters = filters.PHOTO | filters.VIDEO | filters.Sticker.ALL
+     media_filters = (
+         filters.PHOTO
+         | filters.VIDEO
+         | filters.ANIMATION
+         | filters.Document.VIDEO
+         | filters.Sticker.ALL
+     )
+
+    
      app.add_handler(MessageHandler(media_filters, media_handler))
 
-     # Group tracking
-     app.add_handler(ChatMemberHandler(track_group, ChatMemberHandler.MY_CHAT_MEMBER))
-
-     # Abuse word filters
      register_abuse_handlers(app)
+     # Abuse word filters
+
 
      # -------------------------
      # Background DB backup task
