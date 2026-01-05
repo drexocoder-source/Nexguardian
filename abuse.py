@@ -2,26 +2,124 @@ import sqlite3
 import re
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
+import asyncio
+
 
 # ==============================
 # ABUSIVE WORDS LIST (MULTI-LANGUAGE)
 # ==============================
-abuse_words = [
-    # Strong English abusive words
-    "bc", "bitch", "ass", "shit", "fuck", "damn", "crap", "bastard",
-    "slut", "whore", "jerk", "dick", "pussy", "cock", "cunt",
-    "bollocks", "bugger", "arse", "twat", "prick", "tosser", "wanker",
 
-    # Hindi abusive words (transliterated)
-    "chutiya", "bhosadi", "madarchod", "randi", "harami", "bhains", "lund",
-    "gandu", "chodu", "bhenchod", "chutiye", "kaminey", "haramzada",
-    "lund ka", "bhosdike", "mc", "bhosadi ke", "gaand", "madarchod",
-    "bhen ka loda", "gandu ka", "choot ka", "randi ka", "bhonsadi ka",
-    "haram ka", "bhosda", "chootiyapa", "lodu ka", "chutiya ka",
-    "gandu ki", "kaminey ka"
+def normalize_text(text: str) -> str:
+    text = text.lower()
 
-    # Optional: more strong words can be added later
+    # Replace leetspeak
+    replacements = {
+        "1": "i", "!": "i",
+        "3": "e",
+        "4": "a", "@": "a",
+        "5": "s", "$": "s",
+        "0": "o",
+        "*": "",
+        "#": "",
+        "_": "",
+        "-": ""
+    }
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    # Remove extra spaces between letters
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"(.)\1{2,}", r"\1", text)  # aaa -> a
+
+    return text
+
+def calculate_toxicity(text: str) -> int:
+    score = 0
+
+    normalized = normalize_text(text)
+
+    # Exact words
+    if abuse_pattern.search(normalized):
+        score += 3
+
+    # Phrase abuse
+    for phrase in abuse_phrases:
+        if phrase in normalized:
+            score += 3
+
+    # Spaced abuse (b h e n c h o d)
+    spaced = normalized.replace(" ", "")
+    if abuse_pattern.search(spaced):
+        score += 2
+
+    # Repeated characters abuse
+    if re.search(r"(chut|gand|lund|madar|bhen)", normalized):
+        score += 1
+
+    return score
+    
+abuse_phrases = [
+    # Maa / Baap insults
+    "teri maa", "tera baap", "maa chod", "maa chodne",
+    "baap se bakchodi", "baap ko mat sikha",
+    "maa ke bare me", "baap ka paisa",
+
+    # Aukaat / Threats
+    "aukat me reh", "aukat dikha dunga", "apni aukat",
+    "gaand me dum", "dum hai to aa",
+    "samne aa", "dekh lunga tujhe",
+
+    # Sexual / vulgar phrases
+    "bhosda bhar", "gaand marunga", "teri gaand",
+    "maa chuda", "gaand chaat", "lund le",
+    "choot me", "lund ghusa",
+
+    # Sister abuse
+    "behen ke bare me", "behen chod",
+    "behen ke sath", "behen ke name pe",
+
+    # Bhojpuri / desi slang
+    "tohar maa", "tohar baap",
+    "tohar behen", "tohar aukat",
 ]
+
+
+abuse_words = [
+    # ===== Short forms / common chat abuse =====
+    "bc", "mc", "bsdk", "bcc", "bkl", "lkl", "mkc",
+    "mf", "wtf", "omfg", "stfu",
+
+    # ===== English abusive words =====
+    "bitch", "ass", "shit", "fuck", "damn", "crap", "bastard",
+    "slut", "whore", "jerk", "dick", "pussy", "cock", "cunt",
+    "bollocks", "bugger", "arse", "twat", "prick", "tosser",
+    "wanker", "motherfucker", "retard", "idiot", "moron",
+
+    # ===== Hindi / Hinglish abusive words =====
+    "chutiya", "chutiye", "chutiyapa",
+    "madarchod", "madarjat", "harami", "haramzada",
+    "bhenchod", "behenchod", "bhen ke lode",
+    "bhosadi", "bhosdike", "bhonsadi", "bhosda",
+    "randi", "randibaaz",
+    "lund", "lodu", "lode", "loda",
+    "gaand", "gandu", "gandfaad",
+    "choot", "chodu", "chut",
+    "kaminey", "kutta", "kutti",
+    "saala", "saali", "haraami",
+
+    # ===== Combined abusive phrases (single token style) =====
+    "lundka", "bhenkaloda", "maachod", "gaandfaad",
+    "chootka", "randika", "ganduka",
+
+    # ===== Bhojpuri / desi slang =====
+    "tohar", "tohri", "bhosri",
+    "gandmara", "lundbaaz",
+
+    # ===== Mild but toxic (optional, can disable later) =====
+    "pagal", "bewakoof", "gadhe", "ullu",
+]
+
 
 # ==============================
 # Compile regex for fast search
@@ -102,41 +200,45 @@ from telegram.constants import ParseMode
 
 # -----------------------------
 async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Check every message for abusive words and mention the sender."""
     message = update.message
-    if not message or not message.chat or not message.text:
+    if not message or not message.text:
         return
 
     chat_id = message.chat.id
     if not get_abuse_settings(chat_id):
         return
 
-    text = message.text.lower()
-    if abuse_pattern.search(text):
+    toxicity = calculate_toxicity(message.text)
+
+    if toxicity >= 3:
         try:
             await message.delete()
 
-            # Mention the user in the warning message
-            user_mention = mention_html(message.from_user.id, message.from_user.first_name)
+            user_mention = mention_html(
+                message.from_user.id,
+                message.from_user.first_name
+            )
 
-            warning_text = f"{user_mention} Don’t use prohibited words 🧧"
+            warning_text = (
+                f"{user_mention}\n"
+                f"Don’t use prohibited words 🧧"
+            )
 
-            # Support button
-            keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("Support 🍀", url="https://t.me/NexoraBots_Support")
-            ]])
-
-            await context.bot.send_message(
+            sent = await context.bot.send_message(
                 chat_id,
                 warning_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard
+                parse_mode=ParseMode.HTML
             )
+
+            # Auto delete warning after 3 seconds
+            await asyncio.sleep(3)
+            await sent.delete()
+
         except Exception as e:
-            print(f"[ABUSE] Failed to delete message: {e}")
+            print(f"[ABUSE AI] Error: {e}")
 
 # -----------------------------
-OWNER_ID = 7995262033  # Replace with your ID
+OWNER_ID = 8294062042  # Replace with your ID
 
 # -----------------------------
 # Owner-only commands to manage abuse_words list
