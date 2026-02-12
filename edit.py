@@ -3,6 +3,9 @@ from telegram.ext import ContextTypes
 import sqlite3
 import asyncio
 
+UPDATES_LINK = "https://t.me/Nexxxxxo_bots"
+
+
 # ======================
 # DATABASE
 # ======================
@@ -77,9 +80,11 @@ async def get_admins(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
 
 
 async def is_admin(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int):
-    """Check if a user is admin."""
-    admins = await get_admins(context, chat_id)
-    return user_id in admins
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+        return member.status in ["administrator", "creator"]
+    except Exception:
+        return False
 
 # ======================
 # BACKGROUND DELETION
@@ -108,54 +113,57 @@ async def delete_later(bot, chat_id, msg_id, warning, delay, user):
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
 async def on_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Trigger when a message is edited."""
     message = update.edited_message
     try:
         if not message or message.chat.type not in ["group", "supergroup"]:
             return
         if not message.from_user:
-            print(f"[EDIT DEBUG] Skipping message with no user. ChatID: {message.chat.id}")
             return
 
-        text = message.text or "<no text>"
-        user = message.from_user.username or message.from_user.first_name
-        print(f"[EDIT DEBUG] ChatID: {message.chat.id}, User: {user}, Text: {text}")
+        # Check bot delete rights
+        try:
+            bot_member = await context.bot.get_chat_member(
+                message.chat.id, context.bot.id
+            )
+            if not bot_member.can_delete_messages:
+                return
+        except Exception:
+            return
 
-        # Fetch settings from DB
         settings = get_edit_settings(message.chat.id)
         if not settings["is_enabled"] or settings["delay_seconds"] <= 0:
-            print(f"[EDIT DEBUG] Edit defender disabled or delay <= 0 for chat {message.chat.id}")
             return
 
-        # 🚫 No admin skip — applies to ALL
+        user = message.from_user.mention_html()
+        delay = settings["delay_seconds"]
 
-        # Warning text
         warning_text = (
-            f"⚠️ Edit Alert!\n"
-            f"🚫 Edits are not allowed in this group!\n"
-            f"⏳ Your message will be deleted in {settings['delay_seconds']} seconds."
+            f"🛡️ <b>Edit Defender</b>\n\n"
+            f"{user}\n"
+            f"🧧 Editing messages is not allowed in this group.\n"
+            f"⏳ This message will be removed in <b>{delay}s</b>."
         )
 
-        # Support button
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("Support 🍀", url="https://t.me/NexoraBots_Support")
+            InlineKeyboardButton("Updates 🚀", url=UPDATES_LINK)
         ]])
 
-        try:
-            sent = await message.reply_text(warning_text, reply_markup=keyboard)
-        except Exception as e:
-            print(f"[EDIT DEBUG] Cannot send warning message: {e}")
-            sent = None
+        sent = await message.reply_text(
+            warning_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
 
-        # Run deletion in background
         asyncio.create_task(
             delete_later(
                 context.bot,
                 message.chat.id,
                 message.message_id,
                 sent,
-                settings["delay_seconds"],
+                delay,
                 user,
             )
         )
@@ -168,50 +176,100 @@ async def on_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ======================
 async def setdelay_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    if message.chat.type == "private":
+    chat = message.chat
+    user = message.from_user
+
+    if chat.type == "private":
         await message.reply_text("🚫 This command works only in groups.")
         return
 
-    if not await is_admin(context, message.chat.id, message.from_user.id):
+    if not await is_admin(context, chat.id, user.id):
         await message.reply_text("⚠️ Only admins can use this command.")
         return
 
     args = message.text.split()
     if len(args) != 2 or not args[1].isdigit():
-        await message.reply_text("ℹ️ Usage: `/setdelay <seconds>`", parse_mode="Markdown")
+        await message.reply_text(
+            "Usage: `/setdelay <seconds>`",
+            parse_mode="Markdown"
+        )
         return
 
     delay = int(args[1])
-    update_edit_settings(message.chat.id, delay_seconds=delay)
-    await message.reply_text(f"⏳ Edit delay set to {delay} seconds.")
+    update_edit_settings(chat.id, delay_seconds=delay)
+
+    await message.reply_text(
+        f"⏳ <b>Edit Delay Updated</b>\n\n"
+        f"New delay: <b>{delay}</b> seconds\n\n"
+        f"Updates: <a href='{UPDATES_LINK}'>Nexora Bots</a>",
+        parse_mode="HTML"
+    )
 
 async def editdefender_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    if message.chat.type == "private":
-        await message.reply_text("🚫 This command works only in groups.")
+    chat = message.chat
+    user = message.from_user
+
+    if chat.type == "private":
+        await message.reply_text(
+            "🚫 *Edit Defender*\n\nThis command works only in groups.",
+            parse_mode="Markdown"
+        )
         return
 
-    if not await is_admin(context, message.chat.id, message.from_user.id):
-        await message.reply_text("⚠️ Only admins can use this command.")
+    if not await is_admin(context, chat.id, user.id):
+        await message.reply_text(
+            "⚠️ *Access Denied*\n\nOnly group admins can manage Edit Defender.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Bot permission check
+    try:
+        bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
+        if not bot_member.can_delete_messages:
+            await message.reply_text(
+                "❌ *Missing Permission*\n\n"
+                "I need:\n• Delete messages\n\n"
+                "Please promote me as admin.",
+                parse_mode="Markdown"
+            )
+            return
+    except Exception:
+        await message.reply_text(
+            "❌ I cannot verify my permissions.\nPlease make me admin."
+        )
         return
 
     args = message.text.split()
-    current = get_edit_settings(message.chat.id)
+    current = get_edit_settings(chat.id)
 
     if len(args) == 1:
         status = "enabled ✅" if current["is_enabled"] else "disabled ❌"
         delay = current["delay_seconds"]
-        await message.reply_text(f"🛡️ Edit Defender is {status}\n⏳ Delay: {delay} seconds")
+        await message.reply_text(
+            f"🛡️ <b>Edit Defender Updated</b>\n\n"
+            f"Now {status} for this group.\n\n"
+            f"Updates: <a href='{UPDATES_LINK}'>Nexora Bots</a>",
+            parse_mode="HTML"
+        )
         return
 
     if args[1].lower() not in ["on", "off"]:
-        await message.reply_text("ℹ️ Usage: `/editdefender on/off`")
+        await message.reply_text("Usage: `/editdefender on|off`", parse_mode="Markdown")
         return
 
     enabled = args[1].lower() == "on"
-    update_edit_settings(message.chat.id, is_enabled=enabled)
+    update_edit_settings(chat.id, is_enabled=enabled)
     status = "enabled ✅" if enabled else "disabled ❌"
-    await message.reply_text(f"🛡️ Edit Defender {status} for this group.")
+
+    await message.reply_text(
+        f"🛡️ <b>Edit Defender Updated</b>\n\n"
+        f"Now {status} for this group.\n\n"
+        f"Updates: <a href='{UPDATES_LINK}'>Nexora Bots</a>",
+        parse_mode="HTML"
+    )
+
 
 async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
