@@ -5,3 +5,7 @@ psutil>=5.9.5
 python-dotenv
 pyrogram
 Pillow>=10.0.0
+flask
+telegram
+asyncpg
+aiohttp
