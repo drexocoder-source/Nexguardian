@@ -26,6 +26,8 @@ from telegram.ext import (
  )
 
  # === CUSTOM MODULES ===
+from admin import register_admin
+from commands import register_command_cleaner
 from edit import setdelay_command, editdefender_command, id_command, on_edit, init_edit_db
 from media import init_media_db, media_command, interval_command, media_handler
 from abuse import register_abuse_handlers, init_abuse_db
@@ -34,7 +36,7 @@ from abuse import register_abuse_handlers, init_abuse_db
  # ======================
  # CONFIG
  # ======================
-BOT_TOKEN = "8472284333:AAELqEsjqJEYJGQtuod0FNmyYkzElvx1m1o"
+BOT_TOKEN = "8525675783:AAEFsPuVOT0xQ1x5OfWY6q6JJget1zBLqNc"
 ADMIN_USER_ID = 8294062042
 BANNER_URL = "https://graph.org/file/855bf51853efeb6c72866-cea0a3a8655dd75ad4.jpg"
 STATS_IMAGE = "temp_image.jpg"
@@ -106,30 +108,43 @@ WELCOME_MSG = """
  """
 
 HELP_MSG = """
- 🛡️ <b>Nexora Guardian Commands</b> 🛡️
+🛡️ <b>Nexora Guardian – Help Menu</b>
 
- ⚙️ <b>General Commands:</b>
- - <code>/start</code> → Activate the bot
- - <code>/stats</code> → View bot statistics
- - <code>/id</code> → Show your user & group ID
+⚙️ <b>General</b>
+• <code>/start</code> — Start the bot  
+• <code>/stats</code> — Bot statistics  
+• <code>/id</code> — Your user & group ID  
 
- 📢 <b>Admin & Broadcast:</b>
- - <code>/logs</code> → Check logs (admin only)
- - <code>/broadcast</code> → Forward a message to all users & groups (admin only)
+👮 <b>Admin & System</b>
+• <code>/logs</code> — View logs (admin)  
+• <code>/broadcast</code> — Global message (owner)  
 
- 🛡️ <b>Edit Defender:</b>
- - <code>/setdelay &lt;seconds&gt;</code> → Set delay for edit defender
- - <code>/antiedit on/off</code> → Enable or disable edit defender
+🛡️ <b>Edit Defender</b>
+• <code>/editdefender on / off</code> — Enable / Disable
+• <code>/setdelay &lt;seconds&gt;</code> — Delete delay  
 
- 🖼️ <b>Media Auto-Delete:</b>
- - <code>/media</code> → Manage media auto-delete settings
- - <code>/interval</code> → Set media delete interval
+🖼️ <b>Media Auto-Delete</b>
+• <code>/media</code> — View status  
+• <code>/media on/off</code> — Enable / Disable
+• <code>/interval &lt;minutes&gt;</code> — Set interval  
 
- ⚠️ <b>Abuse & Moderation:</b>
- - <code>/abuse</code> → To enable/disable abuse word filter
+⚠️ <b>Abuse Filter</b>
+• <code>/abuse</code> — Toggle AI abuse filter  
 
- 💬 Stay safe, enforce rules, and keep your groups clean! ✨
- """
+🧹 <b>Command Cleaner</b>
+• <code>/cleaner on / off </code> — Delete commands  
+
+🗑️ <b>Admin Tools</b>
+• <code>/del</code> — Delete replied message  
+• <code>/del &lt;reason&gt;</code> — Delete with reason  
+
+✨ <b>Nexora Guardian</b>  
+AI-powered moderation for Telegram groups.  
+Fast • Smart • Secure
+
+Updates: Nexora Bots
+"""
+
  # ======================
  # IMAGE HELPERS
  # ======================
@@ -375,68 +390,64 @@ async def backup_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
      except Exception as e:
          await update.message.reply_text(f"❌ Failed to send backup: {e}")
          print(f"[BACKUP] Failed to send DB: {e}")
+# ======================
+# STARTUP HOOK
+# ======================
+async def on_startup(app):
+    me = await app.bot.get_me()
+    print(f"Nexora Guardian is running as @{me.username}...")
+    asyncio.create_task(backup_db_loop(app.bot))
 
- # ======================
- # MAIN
- # ======================
+
+# ======================
+# MAIN
+# ======================
 def main():
-     init_db()
-     init_edit_db()
-     init_media_db()
-     init_abuse_db()
+    init_db()
+    init_edit_db()
+    init_media_db()
+    init_abuse_db()
 
+    app = Application.builder().token(BOT_TOKEN).build()
 
-     print("Nexora Guardian is running...")
+    # Commands
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", send_help))
+    app.add_handler(CallbackQueryHandler(send_help, pattern="send_help"))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("logs", logs_command))
+    app.add_handler(CommandHandler("broadcast", broadcast_command))
+    app.add_handler(CommandHandler("setdelay", setdelay_command))
+    app.add_handler(CommandHandler("antiedit", editdefender_command))
+    app.add_handler(CommandHandler("id", id_command))
+    app.add_handler(CommandHandler("media", media_command))
+    app.add_handler(CommandHandler("interval", interval_command))
+    app.add_handler(CommandHandler("restore", restore_command))
+    app.add_handler(CommandHandler("backup", backup_command))
 
-     app = Application.builder().token(BOT_TOKEN).build()
+    # Edited messages
+    app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
 
-     # Commands
-     app.add_handler(CommandHandler("start", start_command))
-     app.add_handler(CommandHandler("help", send_help))
-     app.add_handler(CallbackQueryHandler(send_help, pattern="send_help"))
-     app.add_handler(CommandHandler("stats", stats_command))
-     app.add_handler(CommandHandler("logs", logs_command))
-     app.add_handler(CommandHandler("broadcast", broadcast_command))
-     app.add_handler(CommandHandler("setdelay", setdelay_command))
-     app.add_handler(CommandHandler("antiedit", editdefender_command))
-     app.add_handler(CommandHandler("id", id_command))
-     app.add_handler(CommandHandler("media", media_command))
-     app.add_handler(CommandHandler("interval", interval_command))
-     app.add_handler(CommandHandler("restore", restore_command))  # Restore command
-     app.add_handler(CommandHandler("backup", backup_command))
+    # Media auto-delete
+    media_filters = (
+        filters.PHOTO
+        | filters.VIDEO
+        | filters.ANIMATION
+        | filters.Document.VIDEO
+        | filters.Sticker.ALL
+    )
+    app.add_handler(MessageHandler(media_filters, media_handler))
 
+    register_abuse_handlers(app)
+    register_command_cleaner(app)
+    register_admin(app)
 
-     # Edited messages
-     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
+    # Attach startup hook
+    app.post_init = on_startup
 
-     # Media auto-delete
-     media_filters = (
-         filters.PHOTO
-         | filters.VIDEO
-         | filters.ANIMATION
-         | filters.Document.VIDEO
-         | filters.Sticker.ALL
-     )
-
-    
-     app.add_handler(MessageHandler(media_filters, media_handler))
-
-     register_abuse_handlers(app)
-     # Abuse word filters
-
-
-     # -------------------------
-     # Background DB backup task
-     # -------------------------
-     async def start_backup(app):
-         asyncio.create_task(backup_db_loop(app.bot))
-
-     # Schedule backup after bot starts
-     app.post_init = start_backup
-
-     # Start polling
-     app.run_polling()
+    # Start bot
+    app.run_polling()
 
 
 if __name__ == "__main__":
-     main()
+    main()
