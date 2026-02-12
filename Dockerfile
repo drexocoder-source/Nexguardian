@@ -7,4 +7,4 @@ COPY . .
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
-CMD ["python3", "bot.py"]
+CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:app"]
