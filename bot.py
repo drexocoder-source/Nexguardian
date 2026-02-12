@@ -6,6 +6,8 @@ import asyncio
 import sqlite3
 from datetime import datetime
 import shutil
+import threading
+from app import app as flask_app
 
 
 from telegram import (
@@ -398,6 +400,19 @@ async def on_startup(app):
     print(f"Nexora Guardian is running as @{me.username}...")
     asyncio.create_task(backup_db_loop(app.bot))
 
+# ======================
+# FLASK PORT SERVER (Render)
+# ======================
+
+import threading
+from app import app as flask_app
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8000))
+    flask_app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
+
 
 # ======================
 # MAIN
@@ -410,7 +425,6 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", send_help))
     app.add_handler(CallbackQueryHandler(send_help, pattern="send_help"))
@@ -425,10 +439,8 @@ def main():
     app.add_handler(CommandHandler("restore", restore_command))
     app.add_handler(CommandHandler("backup", backup_command))
 
-    # Edited messages
     app.add_handler(MessageHandler(filters.UpdateType.EDITED_MESSAGE, handle_edited_message))
 
-    # Media auto-delete
     media_filters = (
         filters.PHOTO
         | filters.VIDEO
@@ -442,12 +454,11 @@ def main():
     register_command_cleaner(app)
     register_admin(app)
 
-    # Attach startup hook
     app.post_init = on_startup
 
-    # Start bot
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+
