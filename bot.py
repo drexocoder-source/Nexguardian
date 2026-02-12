@@ -122,7 +122,7 @@ HELP_MSG = """
 • <code>/broadcast</code> — Global message (owner)  
 
 🛡️ <b>Edit Defender</b>
-• <code>/editdefender on / off</code> — Enable / Disable
+• <code>/editedit on / off</code> — Enable / Disable
 • <code>/setdelay &lt;seconds&gt;</code> — Delete delay  
 
 🖼️ <b>Media Auto-Delete</b>
