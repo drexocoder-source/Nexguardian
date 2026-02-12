@@ -6,6 +6,8 @@ python-dotenv
 pyrogram
 Pillow>=10.0.0
 flask
+gunicorn
+flask
 telegram
 asyncpg
 aiohttp
