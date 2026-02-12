@@ -36,7 +36,7 @@ from abuse import register_abuse_handlers, init_abuse_db
  # ======================
  # CONFIG
  # ======================
-BOT_TOKEN = "8525675783:AAEFsPuVOT0xQ1x5OfWY6q6JJget1zBLqNc"
+BOT_TOKEN = "8525675783:AAEBE27O8CXTA37OiIzM_QVE7vfKz_bkP88"
 ADMIN_USER_ID = 8294062042
 BANNER_URL = "https://graph.org/file/855bf51853efeb6c72866-cea0a3a8655dd75ad4.jpg"
 STATS_IMAGE = "temp_image.jpg"
