@@ -1,7 +1,6 @@
 import sqlite3
 import re
 import asyncio
-import aiohttp
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters
 from telegram.constants import ParseMode
@@ -12,11 +11,11 @@ from telegram.helpers import mention_html
 # =========================
 
 OWNER_ID = 8294062042
-NVIDIA_API_KEY = "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"
 SUPPORT_LINK = "https://t.me/Nexxxxxo_bots"
+ABUSE_FILE = "abusewords.txt"
 
 # ==============================
-# NORMALIZER (fallback system)
+# NORMALIZER
 # ==============================
 
 def normalize_text(text: str) -> str:
@@ -36,20 +35,27 @@ def normalize_text(text: str) -> str:
     return text
 
 # ==============================
-# FALLBACK ABUSE LIST
+# LOAD WORDS FROM FILE
 # ==============================
 
-abuse_words = [
-    "bc","mc","bsdk","bkl","mkc","mf","stfu",
-    "bitch","ass","shit","fuck","slut","whore",
-    "chutiya","madarchod","bhenchod","lund",
-    "gaand","randi","gandu","harami",
-]
+def load_abuse_words():
+    try:
+        with open(ABUSE_FILE, "r", encoding="utf-8") as f:
+            return [line.strip().lower() for line in f if line.strip()]
+    except FileNotFoundError:
+        open(ABUSE_FILE, "w").close()
+        return []
 
-abuse_pattern = re.compile(
-    r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b',
-    re.IGNORECASE
-)
+abuse_words = load_abuse_words()
+
+def rebuild_regex():
+    global abuse_pattern
+    abuse_pattern = re.compile(
+        r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b',
+        re.IGNORECASE
+    )
+
+rebuild_regex()
 
 # ==============================
 # DATABASE
@@ -84,99 +90,40 @@ def update_abuse_settings(chat_id: int, enabled: bool):
     conn.close()
 
 # ==============================
-# NVIDIA AI DETECTION
-# ==============================
-
-async def ai_detect_abuse(text: str) -> bool:
-    url = "https://integrate.api.nvidia.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {NVIDIA_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": "meta/llama-3.1-70b-instruct",
-        "messages": [
-            {"role": "system", "content": "Reply only YES or NO. Is this message abusive?"},
-            {"role": "user", "content": text}
-        ],
-        "max_tokens": 5,
-        "temperature": 0
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
-                data = await resp.json()
-                reply = data["choices"][0]["message"]["content"].lower()
-                return "yes" in reply
-    except Exception as e:
-        print("[AI ERROR]", e)
-        return False
-
-# ==============================
 # /abuse COMMAND
 # ==============================
+
 async def abuse_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     chat = msg.chat
     user = msg.from_user
 
-    # Block in DM
     if chat.type == "private":
-        await msg.reply_text("❌ This command can only be used in groups.")
+        await msg.reply_text("❌ Use in groups only.")
         return
 
-    # Check user admin
-    try:
-        member = await context.bot.get_chat_member(chat.id, user.id)
-        if member.status not in ["administrator", "creator"]:
-            await msg.reply_text("⚠️ Only group admins can use this command.")
-            return
-    except Exception:
-        await msg.reply_text(
-            "❌ I can't verify admin status.\n"
-            "Please make sure I'm an admin in this group."
-        )
+    member = await context.bot.get_chat_member(chat.id, user.id)
+    if member.status not in ["administrator", "creator"]:
+        await msg.reply_text("⚠️ Only admins.")
         return
 
-    # Check bot permissions
-    try:
-        bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
-        can_delete = bot_member.can_delete_messages
-    except Exception:
-        await msg.reply_text(
-            "❌ I don't have enough permissions.\n"
-            "Please promote me as admin with:\n"
-            "• Delete messages"
-        )
+    bot_member = await context.bot.get_chat_member(chat.id, context.bot.id)
+    if not bot_member.can_delete_messages:
+        await msg.reply_text("❌ Give me Delete Messages permission.")
         return
 
     args = msg.text.split()
 
-    # Show status
     if len(args) == 1:
         status = "enabled ✅" if get_abuse_settings(chat.id) else "disabled ❌"
-        await msg.reply_text(f"AI Abuse filter is {status}")
+        await msg.reply_text(f"Abuse filter is {status}")
         return
 
     if args[1].lower() in ["on", "off"]:
         enabled = args[1].lower() == "on"
-
-        # If enabling, check delete rights
-        if enabled and not can_delete:
-            await msg.reply_text(
-                "❌ I need *Delete Messages* permission to work.\n\n"
-                "Please give me this permission:\n"
-                "• Delete messages\n\n"
-                "Then try again: `/abuse on`",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
-
         update_abuse_settings(chat.id, enabled)
         await msg.reply_text(
-            f"AI Abuse filter {'enabled ✅' if enabled else 'disabled ❌'}"
+            f"Abuse filter {'enabled ✅' if enabled else 'disabled ❌'}"
         )
 
 # ==============================
@@ -188,35 +135,21 @@ async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if not msg or not msg.text:
         return
 
-    chat_id = msg.chat.id
-    if not get_abuse_settings(chat_id):
+    if not get_abuse_settings(msg.chat.id):
         return
 
-    text = msg.text
-
-    ai_flag = await ai_detect_abuse(text)
-    norm = normalize_text(text)
-    regex_flag = abuse_pattern.search(norm)
-
-    if ai_flag or regex_flag:
+    norm = normalize_text(msg.text)
+    if abuse_pattern.search(norm):
         try:
             await msg.delete()
-
-            mention = mention_html(
-                msg.from_user.id,
-                msg.from_user.first_name
-            )
-
+            mention = mention_html(msg.from_user.id, msg.from_user.first_name)
             warn = await context.bot.send_message(
-                chat_id,
-                f"{mention}\n"
-                f"Don’t use prohibited words 🧧",
+                msg.chat.id,
+                f"{mention}\nDon’t use prohibited words 🧧",
                 parse_mode=ParseMode.HTML
             )
-
             await asyncio.sleep(3)
             await warn.delete()
-
         except Exception as e:
             print("[DELETE ERROR]", e)
 
@@ -225,60 +158,56 @@ async def abuse_message_handler(update: Update, context: ContextTypes.DEFAULT_TY
 # ==============================
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
     user = update.effective_user
+    msg = update.message
 
-    if user.id != OWNER_ID:
+    if user.id != OWNER_ID or msg.chat.type != "private":
         return
 
-    if msg.chat.type != "private":
-        return
-
-    await msg.delete()
     args = context.args
     if not args:
         return
 
     word = args[0].lower()
     if word in abuse_words:
+        await msg.reply_text("Already exists")
         return
 
     abuse_words.append(word)
-    global abuse_pattern
-    abuse_pattern = re.compile(
-        r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b',
-        re.IGNORECASE
-    )
+    with open(ABUSE_FILE, "a", encoding="utf-8") as f:
+        f.write("\n" + word)
+
+    rebuild_regex()
+    await msg.reply_text(f"Added: {word}")
 
 # ==============================
 # OWNER DM ONLY /rm
 # ==============================
 
 async def rm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
     user = update.effective_user
+    msg = update.message
 
-    if user.id != OWNER_ID:
+    if user.id != OWNER_ID or msg.chat.type != "private":
         return
 
-    if msg.chat.type != "private":
-        return
-
-    await msg.delete()
     args = context.args
     if not args:
         return
 
     word = args[0].lower()
     if word not in abuse_words:
+        await msg.reply_text("Not found")
         return
 
     abuse_words.remove(word)
-    global abuse_pattern
-    abuse_pattern = re.compile(
-        r'\b(?:' + '|'.join(re.escape(w) for w in abuse_words) + r')\b',
-        re.IGNORECASE
-    )
+
+    with open(ABUSE_FILE, "w", encoding="utf-8") as f:
+        for w in abuse_words:
+            f.write(w + "\n")
+
+    rebuild_regex()
+    await msg.reply_text(f"Removed: {word}")
 
 # ==============================
 # REGISTER
@@ -292,3 +221,4 @@ def register_abuse_handlers(application):
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, abuse_message_handler)
     )
+
